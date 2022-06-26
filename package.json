@@ -1,5 +1,5 @@
 {
-  "name": "zcache",
+  "name": "@punkish/zcache",
   "version": "1.0.1",
   "description": "a zimple file-based cache",
   "main": "index.js",
@@ -8,12 +8,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "zcache"
+    "url": "git+https://github.com/punkish/zcache.git"
   },
   "keywords": [
     "file-cache"
   ],
   "author": "Puneet Kishor",
   "license": "CC0-1.0",
-  "type": "module"
+  "type": "module",
+  "homepage": "https://github.com/punkish/zcache#readme"
 }
