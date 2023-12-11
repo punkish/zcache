@@ -1,16 +1,35 @@
 import { Cache } from './index.js';
 
 const test_sync = () => {
-    const cache_sync = new Cache({ duration: 5000 });
+    const cache_sync = new Cache({ duration: 1 * 24 * 3600 * 1000 });
 
+    console.log("// cache_sync.rm('foo')");
+    let res = cache_sync.rm('foo');
+    let msg = res
+        ? '// removed cache successfully'
+        : '// nothing to remove';
+    console.log(msg, '\n');
+    
     console.log("// cache_sync.get('foo')");
-    console.log(cache_sync.get('foo'), '\n');
+    res = cache_sync.get('foo');
+    msg = res
+        ? '// got cached value'
+        : '// nothing to get';
+    console.log(msg, '\n', res, '\n');
 
     console.log("// cache_sync.set('foo', 'update the cache')");
-    console.log(cache_sync.set('foo', 'update the cache'), '\n');
+    res = cache_sync.set('foo', 'update the cache');
+    msg = res
+        ? '// set cache successfully'
+        : '// cache failed';
+    console.log(msg, '\n', res, '\n');
 
     console.log("// cache_sync.get('foo')");
-    console.log(cache_sync.get('foo'), '\n');
+    res = cache_sync.get('foo');
+    msg = res
+        ? '// got cached value'
+        : '// nothing to get';
+    console.log(msg, '\n', res, '\n');
 }
 
 const test_async = async () => {
@@ -68,7 +87,7 @@ const test_async = async () => {
     // console.log(clear);
 }
 
-test_async();
+test_sync();
 
 
 /*

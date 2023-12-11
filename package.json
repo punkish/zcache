@@ -1,6 +1,6 @@
 {
   "name": "@punkish/zcache",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "a zimple file-based cache",
   "main": "index.js",
   "scripts": {

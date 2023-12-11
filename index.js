@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import fs from 'fs';
+import path from 'path';
 
 /*
  * Create a cache (default options are shown below)
@@ -68,7 +68,9 @@ class Cache {
 
         Object.assign(this, defaultOpts,  opts);
         this.nsdir = `${this.dir}/${this.namespace}`;
-        this.sync ? mkdirSync(this.dir) : mkdirAsync(this.dir);
+        this.sync 
+            ? mkdirSync(this.dir) 
+            : mkdirAsync(this.dir);
     }
 
     get = (key) => {
@@ -77,12 +79,14 @@ class Cache {
             return false;
         }
 
-        return this.sync ? getSync(this.nsdir, key) : getAsync(this.nsdir, key);
+        return this.sync 
+            ? getSync(this.nsdir, key) 
+            : getAsync(this.nsdir, key);
     }
 
     set = (key, val) => {
         if (!key) {
-            console.error(`error: 'key' is required to set its value`);
+            console.error("error: 'key' is required to set its value");
             return false;
         } 
 
@@ -99,37 +103,48 @@ class Cache {
 
     has = (key) => {
         if (!key) {
-            console.error(`error: 'key' is required for has(key) to work`);
+            console.error("error: 'key' is required for has(key) to work");
             return false;
         } 
 
         const file = `${this.nsdir}/${key2path(key)}/${key}.json`;
-        return this.sync ? hasSync(file) : hasAsync(file);
+        return this.sync 
+            ? hasSync(file) 
+            : hasAsync(file);
     }
 
     rm = (key) => {
         if (!key) {
-            console.error(`error: 'key' is required to remove it from cache`);
+            console.error("error: 'key' is required to remove it from cache");
             return false;
         }
 
         const file = `${this.nsdir}/${key2path(key)}/${key}.json`;
-        return this.sync ? rmSync(file) : rmAsync(file);
+        return this.sync 
+            ? rmSync(file) 
+            : rmAsync(file);
     }
 
     delete = (key) => this.rm(key);
 
     clear = (namespace) => {
         if (!namespace) {
-            console.error(`error: 'namespace' is required to clear cache`);
+            console.error("error: 'namespace' is required to clear cache");
             return false;
         }
 
-        return this.sync ? clearSync(this.nsdir) : clearAsync(this.nsdir);
+        return this.sync 
+            ? clearSync(this.nsdir) 
+            : clearAsync(this.nsdir);
     }
   
-    keys = () => this.sync ? walkSync(this.nsdir) : walkAsync(this.nsdir);
-    all = () => this.sync ? allSync(this.nsdir) : allAsync(this.nsdir);
+    keys = () => this.sync 
+        ? walkSync(this.nsdir) 
+        : walkAsync(this.nsdir);
+
+    all = () => this.sync 
+        ? allSync(this.nsdir) 
+        : allAsync(this.nsdir);
 
     opts = () => {
         return {
@@ -161,8 +176,8 @@ const key2path = (key) => {
 /*******************************/
 
 const mkdirSync = (dir) => {
-    if (!fs.existsSync(this.dir)) {
-        fs.mkdirSync(this.dir);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
     }
 }
 
@@ -196,8 +211,8 @@ const getSync = (dir, key) => {
     const filepath = key2path(key);
     const file = `${dir}/${filepath}/${key}.json`;
 
-    const error_is_stale = `error: value of key '${key}' is stale`;
-    const error_no_exist = `error: key '${key}' doesn't exist`;
+    // const error_is_stale = `error: value of key '${key}' is stale`;
+    // const error_no_exist = `error: key '${key}' doesn't exist`;
 
     if (fs.existsSync(file)) {
         const d = JSON.parse(fs.readFileSync(file));
@@ -206,11 +221,11 @@ const getSync = (dir, key) => {
             return d;
         }
 
-        console.error(error_is_stale);
+        //console.error(error_is_stale);
         return false;
     }
     
-    console.error(error_no_exist);
+    //console.error(error_no_exist);
     return false;
 }
 
@@ -237,7 +252,7 @@ const rmSync = (file) => {
         return true;
     }
     
-    console.error(error_exist);
+    //console.error(error_exist);
     return false;
 }
 
@@ -247,7 +262,7 @@ const clearSync = (dir) => {
         return true;
     }
     
-    console.error(`error: '${dir}' doesn't exist`);
+    //console.error(`error: '${dir}' doesn't exist`);
     return false;
 }
 
@@ -282,8 +297,6 @@ const mkdirAsync = async (dir) => {
             await fs.promises.mkdir(dir, { recursive: true });
         }
         catch (error) {
-
-            // error making the directory
             console.error(error);
         }
     }
@@ -298,7 +311,7 @@ const walkAsync = async (dir, results = []) => {
     // the `withFileTypes` option saves having to call stat() on every file
     const files = await fs.promises.readdir(dir, { withFileTypes: true });
 
-    for (let file of files) {
+    for (const file of files) {
         const fullPath = path.join(dir, file.name);
         
         if (file.isDirectory()) {
@@ -319,8 +332,8 @@ const getAsync = async (dir, key) => {
     const filepath = key2path(key);
     const file = `${dir}/${filepath}/${key}.json`;
 
-    const error_is_stale = `error: value of key '${key}' is stale`;
-    const error_no_exist = `error: key '${key}' doesn't exist`;
+    // const error_is_stale = `error: value of key '${key}' is stale`;
+    // const error_no_exist = `error: key '${key}' doesn't exist`;
 
     try {
         const data = await fs.promises.readFile(file, 'utf8');
@@ -330,7 +343,7 @@ const getAsync = async (dir, key) => {
             return d;
         }
 
-        console.error(error_is_stale);
+        //console.error(error_is_stale);
         return false;
     }
 
