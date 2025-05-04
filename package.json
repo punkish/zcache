@@ -16,5 +16,8 @@
   "author": "Puneet Kishor",
   "license": "CC0-1.0",
   "type": "module",
-  "homepage": "https://github.com/punkish/zcache#readme"
+  "homepage": "https://github.com/punkish/zcache#readme",
+  "devDependencies": {
+    "tap": "^18.7.3"
+  }
 }

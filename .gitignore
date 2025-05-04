@@ -53,6 +53,7 @@ coverage/
 #################
 local.js
 
-# hidden files #
+# hidden files and directories #
 ################
 .nyc_output
+.tap
