@@ -1,87 +1,53 @@
-import tap from 'tap';
 import { Cache } from './index.js';
 
-const key1 = 'foo';
-const key2 = 'biome=Tropical%20and%20Subtropical%20Coniferous%20Forests&yearlyCounts=true&page=1&size=30&cols=treatmentId&cols=treatmentTitle&cols=zenodoDep&cols=treatmentDOI&cols=articleTitle&cols=articleAuthor&cols=httpUri&cols=caption';
-
-const val = {
-    item: { a: 'foo', b: 'bar', c: 'baz' }
-};
-
+// Create a new semantic cache
 const cache = new Cache();
 
-let res1 = cache.get(key1);
-console.log('should be "false" because never stored');
-console.log(res1, '\n');
+//console.log('keys: ', await cache.keys());
+// console.log('clear', await cache.clear());
+const query1 = 'What is the speed of a swallow?';
+const answer1 = 500;
+const isSemantic1 = true;
+console.log(`set: ${query1} ->`, await cache.set(query1, answer1, isSemantic1));
 
-console.log('should be "false" because never stored');
-res1 = cache.get(key2);
-console.log(res1, '\n');
+const query2 = 'What is the speed of a turtle?';
+const answer2 = 250;
+const isSemantic2 = true;
+console.log(`set: ${query2} ->`, await cache.set(query2, answer2, isSemantic2));
 
-console.log('should be "val{}" because set now');
-res1 = cache.set(key2, val);
-console.log(res1, '\n');
+console.log(`get: ${query1} ->`, await cache.get(query1));
 
-console.log('should be "val{}" from get because stored earlier');
-res1 = cache.get(key2);
-console.log(res1, '\n');
+const query3 = 'How fast does the swallow fly?';
+console.log(`get: ${query3} ->`, await cache.get(query3));
 
-const updated_val = JSON.parse(JSON.stringify(res1.item));
-updated_val.item.a = 'qux';
-res1 = cache.set(key2, updated_val);
-console.log(`should be "val{ a: 'qux' }" from another set with modified value`);
-console.log(res1, '\n');
+const query4 = 'How fast does the turtle move?';
+console.log(`get: ${query4} ->`, await cache.get(query4));
 
-res1 = cache.get(key1);
-console.log('should be "false" because still not stored');
-console.log(res1, '\n');
+console.log('keys: ', await cache.keys());
+console.log('queries: ', await cache.queries());
+console.log(`has: ${query1} ->`, await cache.has(query1));
+console.log(`prune: -> pruned `, await cache.prune(), ' entries');
+// setTimeout(async () => { 
+//     console.log('get', await cache.get(query1));
+// }, 15000);
+// console.log('keys', await cache.keys());
+// const query2 = 'q=phylogeny';
+// const val2 = 'Phylogeny is blah blah blah';
+// const ttl2 = 10000;
+// console.log('set', await cache.set(key2, val2, ttl2));
+// console.log('get', await cache.get(key2));
+// console.log('keys', await cache.keys());
+// const query3 = 
+// console.log('clear', await cache.clear());
+// console.log('wait 15s');
+// setTimeout(async () => { 
+//     console.log('get', await cache.get(key2));
+//     console.log('keys', await cache.keys());
+//     console.log('clear', await cache.clear());
+// }, 15000);
 
-console.log(`should be "true" because 'has' key stored earlier`);
-res1 = cache.has(key2);
-console.log(res1, '\n');
+// const array1 = [ 0.6046821846986417,0.7727735494098922,0.12977892073297492,0.6927478712656445,0.508891590943992,0.5028789880123004,0.04040205882823522,0.17363198408571123,0.3162928181053293,0.33902444423033007];
+// const array2 = [ 0.01480961123944069,0.7843452234704804,0.48687311617615525,0.08468885802562354,0.04932801689831745,0.5560004223824402,0.9172918089410189,0.48906768565588044,0.8353029797836593,0.45266900725193615];
 
-console.log(`should be "true" because 'removed' succesfully`);
-res1 = cache.rm(key2);
-console.log(res1, '\n');
-
-console.log('should be "val{}" because set once again');
-res1 = cache.set(key2, val);
-console.log(res1, '\n');
-
-console.log(`should be "true" because 'deleted' succesfully`);
-res1 = cache.delete(key2);
-console.log(res1, '\n');
-
-console.log(`should be "false" because does not 'has' key anymore`);
-res1 = cache.has(key2);
-console.log(res1, '\n');
-
-console.log('should be "val{}" because set the third time');
-res1 = cache.set(key2, val);
-console.log(res1, '\n');
-
-console.log('all the keys');
-res1 = cache.keys();
-console.log(res1, '\n');
-
-console.log('should be "val{}" because set the 4th time with 5ms ttl');
-res1 = cache.set(key2, val, 5);
-console.log(res1, '\n');
-
-setTimeout(function () {
-    res1 = cache.get(key1);
-    console.log('should be "false" because stale');
-    console.log(res1, '\n');
-}, 100);
-
-res1 = cache.opts();
-console.log('cache options');
-console.log(res1, '\n');
-// tap.test('zcache', tap => {
-//     tap.same(cache.get(key1), false, 'should be false, not stored');
-//     tap.same(cache.get(key2), false, 'should be false, not stored');
-//     tap.match(cache.set(key2, val), { item: { a: 'foo', b: 'bar', c: 'baz' } }, 'should be val because stored now');
-//     tap.match(cache.get(key2), { item: { a: 'foo', b: 'bar', c: 'baz' } }, 'should be val because stored earlier');
-//     tap.same(cache.get(key1), false, 'should still be false, never stored');
-//     tap.end();
-// });
+// const cs = cache.cosineSimilarity(array1, array2);
+// console.log(cs)

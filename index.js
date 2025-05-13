@@ -1,178 +1,531 @@
-import { sync } from './lib/utils.js';
-import { cacheKeyFile } from './lib/utils.js';
+import crypto from 'crypto';
+import fs from 'node:fs/promises';
+import path from 'path';
+import { generateEmbedding, calculateSimilarity } from './lib/similarity.js';
 
-/*
- * Create a cache (default options are shown below)
- *
- * const cache = new Cache(
- *      { 
- *          // The directory where the cache is stored.
- *          //
- *          // Default is a dir called 'cache'
- *          dir: './cache'
- * 
- *          // Duration ttl in ms for each entry. 
- *          //
- *          // Default is 1 day
- *          duration: 1 * 24 * 60 * 60 * 1000, 
- * 
- *          // A namespace to isolate the cache.
- *          // Namespaces can be cleared without clearing the 
- *          // entire cache. For example, if there are multiple 
- *          // namespaces -- 'default', 'employees', 'partner' -- 
- *          // cache.clear('employees') will clear only that 
- *          // namespace and leave the others alone.
- *          //
- *          // Default is 'default'.
- *          namespace: 'default', 
- * 
- *          // cache methods synchronous or asynchronous. An 
- *          // async cache uses async/await
- *          //
- *          // Default is sync = true
- *          sync: true 
- *      });
- * 
- * The following methods are available
- * 
- * =================================================================
- * method   | description                                           
- * -----------------------------------------------------------------
- * get      | get(key) retrieves key from cache                     
- * set      | set(key, val) sets key to val in cache                
- * has      | has(key) returns true if key exists in cache          
- * rm       | rm(key) removes key from cache
- * delete   | delete(key) -- synonym for rm    
- * clear    | clear(namespace) deletes the entire cache namespace           
- * keys     | keys() lists all the keys in the cache                
- * all      | all() lists all the keys and their values in the cache
- * opts     | opts() lists all the cache options                    
- * ================================================================= 
- * 
- */
-
+/**
+* Create a cache 
+* @param {Object} opts - Configuration options for the cache
+* @param {integer} opts.maxSize - Max entries in the cache (100)
+* @param {number} opts.similarityThreshold - Semantic similarity threshold (0.9)
+* @param {integer} opts.ttl - Time to live in ms (default 1 day)
+* @param {string} opts.zDir - Basedir for the cache ('./cache')
+* @param {string} opts.zSpace - Cache namespace ('default')
+* @returns {Object} - Cache API object
+* const cache = new Cache(
+*      { 
+*          // The directory where the cache is stored.
+*          //
+*          // Default is a dir called 'cache'
+*          dir: './cache'
+* 
+*          // Duration ttl in ms for each entry. 
+*          //
+*          // Default is 1 day
+*          duration: 1 * 24 * 60 * 60 * 1000, 
+* 
+*          // A namespace to isolate the cache.
+*          // Namespaces can be cleared without clearing the 
+*          // entire cache. For example, if there are multiple 
+*          // namespaces -- 'default', 'employees', 'partner' -- 
+*          // cache.clear('employees') will clear only that 
+*          // namespace and leave the others alone.
+*          //
+*          // Default is 'default'.
+*          namespace: 'default', 
+* 
+*          // cache methods synchronous or asynchronous. An 
+*          // async cache uses async/await
+*          //
+*          // Default is sync = true
+*          sync: true 
+*      });
+* The following methods are available
+* 
+* =================================================================
+* method   | description                                           
+* -----------------------------------------------------------------
+* get      | get(key) retrieves key from cache                     
+* set      | set(key, val) sets key to val in cache                
+* has      | has(key) returns true if key exists in cache          
+* rm       | rm(key) removes key from cache
+* delete   | delete(key) -- synonym for rm    
+* clear    | clear(namespace) deletes the entire cache namespace           
+* keys     | keys() lists all the keys in the cache                
+* all      | all() lists all the keys and their values in the cache
+* opts     | opts() lists all the cache options                    
+* ================================================================= 
+*/
 class Cache {
+    constructor(opts = {}) {
 
-    constructor(opts) {
-        const defaultOpts = {
+        // Configuration option defaults
+        const config = {
+            dir: './',
+            name: 'cache',
+            space: 'default',
 
-            // Default cache storage
-            dir: './cache',
+            //   d     h      m       s     ms
+            //   ▲      ▲     ▲       ▲      ▲
+            //   │      │     │       │      │
+            ttl: 1  *  24  *  60  *  60 *  1000,
+            similarityThreshold: 0.9
+        };
 
-            // Default namespace inside cache
-            namespace: 'default',
+        this.config = {}
+        Object.assign(this.config, config,  opts);
+        this.config.dirNameSpace = this.#genDirNameSpace()
 
-            // Default ttl one day in milliseconds
-            duration: 1 * 24 * 60 * 60 * 1000,
-
-            // Defaul use synchronous vs asynchronous methods
-            sync: true
-        }
-
-        Object.assign(this, defaultOpts,  opts);
-        this.nsdir = `${this.dir}/${this.namespace}`;
-        sync.mkdir(this.nsdir);
-        //this.sync ? sync.mkdir(this.nsdir) : mkdirAsync(this.nsdir);
+        // Ensure cache directory exists
+        this.#initializeDirectory();
     }
 
-    get = (key) => {
-        if (!key) {
-            console.error("error: 'key' is required to get its value");
+    async get(query, isSemantic = false) {
+        if (!query) {
+            console.error("error: 'query' is required to get its value");
             return false;
         }
 
-        const file = cacheKeyFile(this.nsdir, key);
-        const data = sync.get(file);
+        // First, check if there is an exact query
+        let cachedData = await this.#get(query);
+        if (cachedData) return cachedData;
+        
+        if (isSemantic) {
 
-        return (data.stored + data.ttl) > Date.now()
-            ? data
-            : false;
+            // No exact query found, so check for semantically similary queries
+            cachedData = await this.#getSem(query);
+            if (cachedData) return cachedData;
+        }
+        
+        // Nothing found
+        return false;
     }
 
-    set = (key, val, duration) => {
-        if (!key) {
-            console.error("error: 'key' is required to set its value");
-            return false;
+    async #get(query) {
+        const { dirNameSpace123File } = this.#genPaths(query);
+
+        try {
+            const data = await fs.readFile(dirNameSpace123File, 'utf8');
+            const entry = JSON.parse(data);
+            
+            // Check TTL
+            if (this.#isExpired(entry)) {
+                await this.#rm_byQuery(query);
+                return false;
+            }
+
+            return entry;
         } 
+        catch (error) {
 
-        const file = cacheKeyFile(this.nsdir, key);
+            // File doesn't exist, which is fine
+            if (error.code !== 'ENOENT') {
+                throw error; // Other errors should be thrown
+            }
 
-        const data = {
-            item: val,
+        }
+    }
+
+    async #getSem(query) {
+
+        // There is no exact match, so let's check for similar queries
+        const srcEmbedding = await this.#generateEmbedding(query);
+        let bestMatch;
+        let highestSimilarity = 0;
+        const isExpired = this.#isExpired;
+        const generateEmbedding = this.#generateEmbedding;
+        const calculateSimilarity = this.#calculateSimilarity;
+        const rm_byKey = this.#rm_byKey;
+
+        function cb({ file, key }) {
+            
+            return async function() {
+                try {
+                    const data = await fs.readFile(file, 'utf8');
+                    const entry = JSON.parse(data);
+                    
+                    // Check TTL
+                    if (isExpired(entry)) {
+                        await rm_byKey(key);
+                        return false;
+                    }
+
+                    if (entry.isSemantic) {
+                        const tgtEmbedding = await generateEmbedding(
+                            entry.query
+                        );
+                        const similarity = calculateSimilarity(
+                            srcEmbedding, 
+                            tgtEmbedding
+                        );
+
+                        if (similarity && (similarity > highestSimilarity)) {
+                            highestSimilarity = similarity;
+                            bestMatch = entry;
+                        }
+                    }
+
+                } 
+                catch (error) {
+
+                    // File doesn't exist, which is fine
+                    if (error.code !== 'ENOENT') {
+                        throw error; // Other errors should be thrown
+                    }
+
+                }
+            }
+        }
+
+        await this.#walkDir(cb);
+
+        if (bestMatch) {
+            return bestMatch;  
+        }
+              
+    }
+
+    async set(query, response, isSemantic = false, ttl = this.config.ttl) {
+        if (!query) {
+            console.error("error: 'query' is required to set its value");
+            return false;
+        }
+
+        if (!response) {
+            console.error("error: 'response' is required to store the query");
+            return false;
+        }
+
+        const data = { 
+            query, 
+            response,
             stored: Date.now(),
-            ttl: duration
-                ? duration
-                : this.duration
-        };
+            ttl
+        }
 
-        return sync.set(file, data);
+        if (isSemantic) {
+            data.isSemantic = true;
+        }
+        
+        const { dirNameSpace123, dirNameSpace123File } = this.#genPaths(query);
+        await this.#mkdir(dirNameSpace123);
 
-        // return this.sync 
-        //     ? setSync(file, data)
-        //     : setAsync(file, data);
+        try {
+            await fs.writeFile(dirNameSpace123File, JSON.stringify(data));
+            return data;
+        }
+        catch (error) {
+            throw new Error(
+                `Failed to write to "${dirNameSpace123File}": ${error.message}`
+            );
+        }
+
     }
 
-    has = (key) => {
-        if (!key) {
-            console.error("error: 'key' is required for has(key) to work");
-            return false;
-        } 
+    async prune() {
+        let pruned = 0;
+        const isExpired = this.#isExpired;
+        const rm_byKey = this.#rm_byKey;
 
-        const file = cacheKeyFile(this.nsdir, key);
-        return sync.has(file);
+        function cb({ file, key }) {
+            
+            return async function() {
+                try {
+                    const data = await fs.readFile(file, 'utf8');
+                    const entry = JSON.parse(data);
+                    
+                    // Check TTL
+                    if (isExpired(entry)) {
+                        await rm_byKey(key);
+                        pruned++;
+                    }
 
-        // return this.sync 
-        //     ? hasSync(file) 
-        //     : hasAsync(file);
+                } 
+                catch (error) {
+
+                    // File doesn't exist, which is fine
+                    if (error.code !== 'ENOENT') {
+                        throw error; // Other errors should be thrown
+                    }
+
+                }
+            }
+        }
+
+        await this.#walkDir(cb);
+        return pruned
     }
 
-    rm = (key) => {
-        if (!key) {
-            console.error("error: 'key' is required to remove it from cache");
+    async rm(query) {
+        return await this.#rm_byQuery(query)
+    }
+
+    // TODO
+    getStats() {
+
+        // Count expired entries
+        let expiredCount = 0;
+
+        // for (const entry of this.cache.values()) {
+        //     if (this.#isExpired(entry)) {
+        //         expiredCount++;
+        //     }
+        // }
+     
+        // return {
+        //     size: this.cache.size,
+        //     maxSize: this.maxSize,
+        //     expired: expiredCount
+        // };
+    }
+
+    // aliases
+    async del(query) { await this.rm(query) }
+    async delete(query) { await this.rm(query) }
+
+    async #rm_byQuery(query) {
+        if (!query) {
+            console.error("error: 'query' is required to delete it");
             return false;
         }
 
-        const file = cacheKeyFile(this.nsdir, key);
-        return sync.rm(file);
-        // return this.sync 
-        //     ? rmSync(file) 
-        //     : rmAsync(file);
+        const { dirNameSpace123File } = this.#genPaths(query);
+        return await this.#rm(dirNameSpace123File)
     }
 
-    delete = (key) => this.rm(key);
-
-    clear = (namespace) => {
-        if (!namespace) {
-            console.error("error: 'namespace' is required to clear cache");
+    async #rm_byKey(key) {
+        if (!key) {
+            console.error("error: 'key' is required to delete it");
             return false;
         }
 
-        return sync.clear(this.nsdir);
-
-        // return this.sync 
-        //     ? clearSync(this.nsdir) 
-        //     : clearAsync(this.nsdir);
-    }
-  
-    keys = () => {
-        return sync.keys(this.nsdir);
-        // this.sync 
-        // ? walkSync(this.nsdir) 
-        // : walkAsync(this.nsdir);
+        const dirNameSpace = this.#genDirNameSpace();
+        const { dirNameSpace123File } = this.#genDirNameSpace123File(key, dirNameSpace);
+        return await this.#rm(dirNameSpace123File)
     }
 
-    // all = () => this.sync 
-    //     ? allSync(this.nsdir) 
-    //     : allAsync(this.nsdir);
-
-    opts = () => {
-        return {
-            dir: this.dir,
-            namespace: this.namespace,
-            duration: this.duration,
-            sync: this.sync
-        };
+    async #rm(dirNameSpace123File) {
+        try {
+            await fs.unlink(dirNameSpace123File);
+            return true;
+        }
+        catch (error) {
+            console.error(error);
+            return false;
+        }
     }
+
+    async queries() {
+        const dirNameSpace = this.#genDirNameSpace();
+        const queries = [];
+        const isExpired = this.#isExpired;
+        const rm_byQuery = this.#rm_byQuery;
+
+        function cb({ file }) {
+            return async function() {
+                try {
+
+                    const data = await fs.readFile(file, 'utf8');
+                    const entry = JSON.parse(data);
+                    
+                    // Check TTL
+                    if (isExpired(entry)) {
+                        await rm_byQuery(query);
+                        return false;
+                    }
+        
+                    queries.push(entry.query);
+                } 
+                catch (error) {
+        
+                    // File doesn't exist, which is fine
+                    if (error.code !== 'ENOENT') {
+                        throw error; // Other errors should be thrown
+                    }
+        
+                }
+            }
+        }
+
+        await this.#walkDir(cb)
+        return queries
+    }
+
+    async keys() {
+        //const dirNameSpace = this.#genDirNameSpace();
+        const results = [];
+
+        function cb({ key }) {
+            return function() {
+                results.push(key);
+            }
+        }
+
+        await this.#walkDir(cb)
+        return results
+    }
+
+    async has(query) {
+        if (!query) {
+            console.error("error: 'query' is required to locate it");
+            return false;
+        }
+
+        const { dirNameSpace123File } = this.#genPaths(query);
+        
+        try {
+
+            // Check if the target file exists
+            await fs.access(dirNameSpace123File);
+            return true;
+        }
+        catch (error) {
+            
+            if (error.code === 'ENOENT') {
+                return false;
+            }
+            else {
+                throw error.message; // Other errors should be thrown
+            }
+
+        }
+
+    }
+
+    async #initializeDirectory() {
+        const dirNameSpace = this.#genDirNameSpace();
+        this.#mkdir(dirNameSpace);
+    }
+
+    async #mkdir(dir) {
+        try {
+            await fs.mkdir(dir, { recursive: true });
+        }
+        catch (error) {
+            throw new Error(`Failed to create "${dir}": ${error.message}`);
+        }
+    }
+
+    #isExpired(entry) {
+        return ((entry.stored + entry.ttl) - Date.now()) <= 0
+    }
+
+    /**
+     * calculate zDirNameSpace
+     * @returns {string} - full path to cache namespace
+     * given   dir          = './'
+     *         name         = 'cache'
+     *         space        = 'default'
+     * returns dirNameSpace = './cache/default'
+     */
+    #genDirNameSpace() {
+        return path.join(this.config.dir, this.config.name, this.config.space )
+    }
+
+    #genDirNameSpace123File(key, dirNameSpace) {
+
+        // full filename of the result
+        // returns 'acbd18db4cc2f85cedef654fccc4a4d8.json'
+        const file = `${key}.json`;
+
+        // calculate filePath
+        // returns './cache/default/a/ac/acb'
+        const [ _, thr, two, one ] = key.match(/(((\w)\w)\w)/);
+        const dirNameSpace123 = path.join(dirNameSpace, one, two, thr);
+
+        // full path to the filename
+        // returns './cache/default/a/ac/acb/acbd18db4cc2f85cedef654fccc4a4d8.json'
+        const dirNameSpace123File = path.join(dirNameSpace123, file);
+        return { file, dirNameSpace123, dirNameSpace123File }
+    }
+
+    #genPaths(query) {
+        if (!query) {
+            throw new Error('"query" is required');
+        }
+
+        const dirNameSpace = this.#genDirNameSpace();
+    
+        // convert query to key
+        // given   'What is the speed of an unladen swallow?'
+        // returns 'acbd18db4cc2f85cedef654fccc4a4d8'
+        const key = crypto.createHash('md5').update(query).digest('hex');
+        const { file, dirNameSpace123, dirNameSpace123File } = this.#genDirNameSpace123File(key, dirNameSpace);
+    
+        return { 
+            dirNameSpace, 
+            key, 
+            file, 
+            dirNameSpace123, 
+            dirNameSpace123File 
+        }
+    }
+
+    async #walkDir(cb, dir = this.config.dirNameSpace) {
+
+        /*
+         * walk a directory and return the basenames of all the json files as 
+         * an array. See https://stackoverflow.com/a/16684530/183692
+         */
+
+        // the `withFileTypes` option saves having to call stat() on every file
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            
+            if (entry.isDirectory()) {
+                const newdir = path.join(dir, entry.name);
+                await this.#walkDir(cb, newdir);
+            }
+
+            // Is a file
+            else {
+
+                if (path.extname(entry.name) === '.json') {
+                    const file = path.join(dir, entry.name);
+                    const params = { 
+
+                        // clear() needs this
+                        // get() needs this
+                        // prune() needs this
+                        file
+                    }
+
+                    // keys() 
+                    const key = path.basename(entry.name, '.json');
+                    params.key = key; 
+
+                    const fn = cb(params);
+                    await fn()
+                }
+                
+                
+            }
+
+        }
+
+    }
+
+    /**
+     * Generate embedding for a query
+     */
+    async #generateEmbedding(query) {
+        return generateEmbedding(query)
+    }
+
+    #calculateSimilarity(embedding1, embedding2) {
+        // const embedding1 = this.#generateEmbedding(query1);
+        // const embedding2 = this.#generateEmbedding(query2);
+        const similarity = calculateSimilarity(embedding1, embedding2);
+
+        if (similarity >= 0.9) {
+            return similarity;
+        }
+
+        return false;
+    }
+    
 }
 
-export { Cache };
+export { Cache }
