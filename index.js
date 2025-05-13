@@ -14,46 +14,26 @@ import { generateEmbedding, calculateSimilarity } from './lib/similarity.js';
 * @returns {Object} - Cache API object
 * const cache = new Cache(
 *      { 
-*          // The directory where the cache is stored.
-*          //
-*          // Default is a dir called 'cache'
-*          dir: './cache'
-* 
-*          // Duration ttl in ms for each entry. 
-*          //
-*          // Default is 1 day
-*          duration: 1 * 24 * 60 * 60 * 1000, 
-* 
-*          // A namespace to isolate the cache.
-*          // Namespaces can be cleared without clearing the 
-*          // entire cache. For example, if there are multiple 
-*          // namespaces -- 'default', 'employees', 'partner' -- 
-*          // cache.clear('employees') will clear only that 
-*          // namespace and leave the others alone.
-*          //
-*          // Default is 'default'.
-*          namespace: 'default', 
-* 
-*          // cache methods synchronous or asynchronous. An 
-*          // async cache uses async/await
-*          //
-*          // Default is sync = true
-*          sync: true 
+*          dir: './'
+*          name: 'cache',
+*          space: 'default',
+*          ttl: 1 * 24 * 60 * 60 * 1000, 
+*          similarityThreshold: 0.9
 *      });
 * The following methods are available
 * 
 * =================================================================
-* method   | description                                           
+* method   | description
 * -----------------------------------------------------------------
-* get      | get(key) retrieves key from cache                     
-* set      | set(key, val) sets key to val in cache                
-* has      | has(key) returns true if key exists in cache          
-* rm       | rm(key) removes key from cache
-* delete   | delete(key) -- synonym for rm    
-* clear    | clear(namespace) deletes the entire cache namespace           
-* keys     | keys() lists all the keys in the cache                
-* all      | all() lists all the keys and their values in the cache
-* opts     | opts() lists all the cache options                    
+* get      | get(query, isSemantic) retrieves query from cache
+* set      | set(query, response, isSemantic) sets query to val in cache 
+* has      | has(query) returns true if key exists in cache
+* rm       | rm(query) removes key from cache
+* del      | del(query) -> synonym for rm
+* delete   | delete(key) -> synonym for rm
+* prune    | prune() removes expired keys
+* keys     | keys() lists all the keys in the cache
+* has      | has(query) return true or false
 * ================================================================= 
 */
 class Cache {
@@ -65,7 +45,7 @@ class Cache {
             name: 'cache',
             space: 'default',
 
-            //   d     h      m       s     ms
+            //   d      h     m       s     ms
             //   ▲      ▲     ▲       ▲      ▲
             //   │      │     │       │      │
             ttl: 1  *  24  *  60  *  60 *  1000,
@@ -154,6 +134,9 @@ class Cache {
                         const tgtEmbedding = await generateEmbedding(
                             entry.query
                         );
+
+                        // Only similarity > similarityThreshold will be 
+                        // returned
                         const similarity = calculateSimilarity(
                             srcEmbedding, 
                             tgtEmbedding
@@ -411,7 +394,7 @@ class Cache {
     }
 
     /**
-     * calculate zDirNameSpace
+     * calculate dirNameSpace
      * @returns {string} - full path to cache namespace
      * given   dir          = './'
      *         name         = 'cache'
@@ -419,7 +402,7 @@ class Cache {
      * returns dirNameSpace = './cache/default'
      */
     #genDirNameSpace() {
-        return path.join(this.config.dir, this.config.name, this.config.space )
+        return path.join(this.config.dir, this.config.name, this.config.space)
     }
 
     #genDirNameSpace123File(key, dirNameSpace) {
@@ -497,7 +480,7 @@ class Cache {
                     params.key = key; 
 
                     const fn = cb(params);
-                    await fn()
+                    await fn();
                 }
                 
                 
@@ -515,11 +498,9 @@ class Cache {
     }
 
     #calculateSimilarity(embedding1, embedding2) {
-        // const embedding1 = this.#generateEmbedding(query1);
-        // const embedding2 = this.#generateEmbedding(query2);
         const similarity = calculateSimilarity(embedding1, embedding2);
 
-        if (similarity >= 0.9) {
+        if (similarity >= this.config.similarityThreshold) {
             return similarity;
         }
 
