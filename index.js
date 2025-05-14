@@ -114,6 +114,7 @@ class Cache {
         let highestSimilarity = 0;
         const isExpired = this.#isExpired;
         const generateEmbedding = this.#generateEmbedding;
+        const similarityThreshold = this.config.similarityThreshold
         const calculateSimilarity = this.#calculateSimilarity;
         const rm_byKey = this.#rm_byKey;
 
@@ -139,7 +140,8 @@ class Cache {
                         // returned
                         const similarity = calculateSimilarity(
                             srcEmbedding, 
-                            tgtEmbedding
+                            tgtEmbedding,
+                            similarityThreshold
                         );
 
                         if (similarity && (similarity > highestSimilarity)) {
@@ -497,10 +499,10 @@ class Cache {
         return generateEmbedding(query)
     }
 
-    #calculateSimilarity(embedding1, embedding2) {
+    #calculateSimilarity(embedding1, embedding2, similarityThreshold) {
         const similarity = calculateSimilarity(embedding1, embedding2);
 
-        if (similarity >= this.config.similarityThreshold) {
+        if (similarity >= similarityThreshold) {
             return similarity;
         }
 
