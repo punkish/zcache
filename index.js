@@ -117,6 +117,7 @@ class Cache {
         const similarityThreshold = this.config.similarityThreshold
         const calculateSimilarity = this.#calculateSimilarity;
         const rm_byKey = this.#rm_byKey;
+        const that = this;
 
         function cb({ file, key }) {
             
@@ -127,7 +128,7 @@ class Cache {
                     
                     // Check TTL
                     if (isExpired(entry)) {
-                        await rm_byKey(key);
+                        await rm_byKey.call(that, key);
                         return false;
                     }
 
@@ -199,11 +200,14 @@ class Cache {
             await fs.writeFile(dirNameSpace123File, JSON.stringify(data));
             return data;
         }
+
+        /* c8 ignore start */
         catch (error) {
             throw new Error(
                 `Failed to write to "${dirNameSpace123File}": ${error.message}`
             );
         }
+        /* c8 ignore stop */
 
     }
 
@@ -211,6 +215,7 @@ class Cache {
         let pruned = 0;
         const isExpired = this.#isExpired;
         const rm_byKey = this.#rm_byKey;
+        const that = this;
 
         function cb({ file, key }) {
             
@@ -221,11 +226,13 @@ class Cache {
                     
                     // Check TTL
                     if (isExpired(entry)) {
-                        await rm_byKey(key);
+                        await rm_byKey.call(that, key);
                         pruned++;
                     }
 
                 } 
+
+                /* c8 ignore start */
                 catch (error) {
 
                     // File doesn't exist, which is fine
@@ -234,6 +241,7 @@ class Cache {
                     }
 
                 }
+                /* c8 ignore stop */
             }
         }
 
@@ -244,29 +252,6 @@ class Cache {
     async rm(query) {
         return await this.#rm_byQuery(query)
     }
-
-    // TODO
-    getStats() {
-
-        // Count expired entries
-        let expiredCount = 0;
-
-        // for (const entry of this.cache.values()) {
-        //     if (this.#isExpired(entry)) {
-        //         expiredCount++;
-        //     }
-        // }
-     
-        // return {
-        //     size: this.cache.size,
-        //     maxSize: this.maxSize,
-        //     expired: expiredCount
-        // };
-    }
-
-    // aliases
-    async del(query) { await this.rm(query) }
-    async delete(query) { await this.rm(query) }
 
     async #rm_byQuery(query) {
         if (!query) {
@@ -279,11 +264,12 @@ class Cache {
     }
 
     async #rm_byKey(key) {
+        
         if (!key) {
             console.error("error: 'key' is required to delete it");
             return false;
         }
-
+        
         const dirNameSpace = this.#genDirNameSpace();
         const { dirNameSpace123File } = this.#genDirNameSpace123File(key, dirNameSpace);
         return await this.#rm(dirNameSpace123File)
@@ -294,17 +280,45 @@ class Cache {
             await fs.unlink(dirNameSpace123File);
             return true;
         }
+
+        /* c8 ignore start */
         catch (error) {
             console.error(error);
             return false;
         }
+        /* c8 ignore stop */
+
     }
+
+    // TODO
+    //getStats() {
+
+        // Count expired entries
+        //let expiredCount = 0;
+
+        // for (const entry of this.cache.values()) {
+        //     if (this.#isExpired(entry)) {
+        //         expiredCount++;
+        //     }
+        // }
+     
+        // return {
+        //     size: this.cache.size,
+        //     maxSize: this.maxSize,
+        //     expired: expiredCount
+        // };
+    //}
+
+    // aliases
+    async del(query) { return await this.rm(query) }
+    async delete(query) { return await this.rm(query) }
 
     async queries() {
         const dirNameSpace = this.#genDirNameSpace();
         const queries = [];
         const isExpired = this.#isExpired;
         const rm_byQuery = this.#rm_byQuery;
+        const that = this;
 
         function cb({ file }) {
             return async function() {
@@ -312,23 +326,27 @@ class Cache {
 
                     const data = await fs.readFile(file, 'utf8');
                     const entry = JSON.parse(data);
+                    const query = entry.query;
                     
                     // Check TTL
                     if (isExpired(entry)) {
-                        await rm_byQuery(query);
+                        await rm_byQuery.call(that, query);
                         return false;
                     }
         
-                    queries.push(entry.query);
-                } 
+                    queries.push(query);
+                }
+
+                /* c8 ignore start */
                 catch (error) {
         
                     // File doesn't exist, which is fine
                     if (error.code !== 'ENOENT') {
                         throw error; // Other errors should be thrown
                     }
-        
+                    
                 }
+                /* c8 ignore stop */
             }
         }
 
@@ -364,6 +382,8 @@ class Cache {
             await fs.access(dirNameSpace123File);
             return true;
         }
+
+        /* c8 ignore start */
         catch (error) {
             
             if (error.code === 'ENOENT') {
@@ -374,6 +394,7 @@ class Cache {
             }
 
         }
+        /* c8 ignore stop */
 
     }
 
@@ -386,9 +407,12 @@ class Cache {
         try {
             await fs.mkdir(dir, { recursive: true });
         }
+
+        /* c8 ignore start */
         catch (error) {
             throw new Error(`Failed to create "${dir}": ${error.message}`);
         }
+        /* c8 ignore stop */
     }
 
     #isExpired(entry) {
