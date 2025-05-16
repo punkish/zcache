@@ -55,9 +55,13 @@ class Cache {
         this.config = {}
         Object.assign(this.config, config,  opts);
         this.config.dirNameSpace = this.#genDirNameSpace()
+    }
+
+    async init() {
 
         // Ensure cache directory exists
-        this.#initializeDirectory();
+        const dirNameSpace = this.#genDirNameSpace();
+        this.#mkdir(dirNameSpace);
     }
 
     async get(query, isSemantic = false) {
@@ -90,12 +94,14 @@ class Cache {
             
             // Check TTL
             if (this.#isExpired(entry)) {
-                await this.#rm_byQuery(query);
+                await this.rm(query);
                 return false;
             }
 
             return entry;
         } 
+
+        /* c8 ignore start */
         catch (error) {
 
             // File doesn't exist, which is fine
@@ -104,6 +110,7 @@ class Cache {
             }
 
         }
+        /* c8 ignore stop */
     }
 
     async #getSem(query) {
@@ -116,27 +123,26 @@ class Cache {
         const generateEmbedding = this.#generateEmbedding;
         const similarityThreshold = this.config.similarityThreshold
         const calculateSimilarity = this.#calculateSimilarity;
-        const rm_byKey = this.#rm_byKey;
+        const rm = this.rm;
         const that = this;
 
 
-        function cb({ file, key }) {
+        function cb({ file }) {
             
             return async function() {
                 try {
                     const data = await fs.readFile(file, 'utf8');
                     const entry = JSON.parse(data);
+                    const query = entry.query;
                     
                     // Check TTL
                     if (isExpired(entry)) {
-                        await rm_byKey.call(that, key);
+                        await rm.call(that, query);
                         return false;
                     }
 
                     if (entry.isSemantic) {
-                        const tgtEmbedding = await generateEmbedding(
-                            entry.query
-                        );
+                        const tgtEmbedding = await generateEmbedding(query);
 
                         // Only similarity > similarityThreshold will be 
                         // returned
@@ -153,6 +159,8 @@ class Cache {
                     }
 
                 } 
+
+                /* c8 ignore start */
                 catch (error) {
 
                     // File doesn't exist, which is fine
@@ -161,6 +169,7 @@ class Cache {
                     }
 
                 }
+                /* c8 ignore stop */
             }
 
         }
@@ -216,19 +225,20 @@ class Cache {
     async prune() {
         let pruned = 0;
         const isExpired = this.#isExpired;
-        const rm_byKey = this.#rm_byKey;
+        const rm = this.rm;
         const that = this;
 
-        function cb({ file, key }) {
+        function cb({ file }) {
             
             return async function() {
                 try {
                     const data = await fs.readFile(file, 'utf8');
                     const entry = JSON.parse(data);
+                    const query = entry.query;
                     
                     // Check TTL
                     if (isExpired(entry)) {
-                        await rm_byKey.call(that, key);
+                        await rm.call(that, query);
                         pruned++;
                     }
 
@@ -252,32 +262,12 @@ class Cache {
     }
 
     async rm(query) {
-        return await this.#rm_byQuery(query)
-    }
-
-    async #rm_byQuery(query) {
         if (!query) {
             console.error("error: 'query' is required to delete it");
             return false;
         }
 
         const { dirNameSpace123File } = this.#genPaths(query);
-        return await this.#rm(dirNameSpace123File)
-    }
-
-    async #rm_byKey(key) {
-        
-        if (!key) {
-            console.error("error: 'key' is required to delete it");
-            return false;
-        }
-        
-        const dirNameSpace = this.#genDirNameSpace();
-        const { dirNameSpace123File } = this.#genDirNameSpace123File(key, dirNameSpace);
-        return await this.#rm(dirNameSpace123File)
-    }
-
-    async #rm(dirNameSpace123File) {
         try {
             await fs.unlink(dirNameSpace123File);
             return true;
@@ -285,11 +275,13 @@ class Cache {
 
         /* c8 ignore start */
         catch (error) {
-            console.error(error);
-            return false;
+
+            // File doesn't exist, which is fine
+            if (error.code !== 'ENOENT') {
+                throw error; // Other errors should be thrown
+            }
         }
         /* c8 ignore stop */
-
     }
 
     // TODO
@@ -316,10 +308,9 @@ class Cache {
     async delete(query) { return await this.rm(query) }
 
     async queries() {
-        const dirNameSpace = this.#genDirNameSpace();
         const queries = [];
         const isExpired = this.#isExpired;
-        const rm_byQuery = this.#rm_byQuery;
+        const rm = this.rm;
         const that = this;
 
         function cb({ file }) {
@@ -332,7 +323,7 @@ class Cache {
                     
                     // Check TTL
                     if (isExpired(entry)) {
-                        await rm_byQuery.call(that, query);
+                        await rm.call(that, query);
                         return false;
                     }
         
@@ -353,7 +344,7 @@ class Cache {
         }
 
         await this.#walkDir(cb)
-        return queries
+        return queries.length ? queries : 0
     }
 
     async keys() {
@@ -397,11 +388,6 @@ class Cache {
         }
         /* c8 ignore stop */
 
-    }
-
-    async #initializeDirectory() {
-        const dirNameSpace = this.#genDirNameSpace();
-        this.#mkdir(dirNameSpace);
     }
 
     async #mkdir(dir) {
@@ -450,10 +436,6 @@ class Cache {
     }
 
     #genPaths(query) {
-        if (!query) {
-            throw new Error('"query" is required');
-        }
-
         const dirNameSpace = this.#genDirNameSpace();
     
         // convert query to key

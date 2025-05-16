@@ -1,115 +1,115 @@
 import t from 'tap';
 import { Cache } from './index.js';
 
-// Create a new semantic cache with a 5 sec time to live
-const cache = new Cache({
-    ttl: 5000
-});
+t.test('testing cache', async (t) => {
+    t.plan(26);
 
-const tests = [
-    async (t, cache) => {
+    // Create a new semantic cache with a 1 sec time to live
+    const cache = new Cache({
+        ttl: 1000
+    });
+
+    await cache.init();
+
+    let d = await cache.queries();
+    t.same(d, 0, "QUERIES no queries in cache");
+
+    d = await cache.get("");
+    t.equal(d, false, "GET no query provided");
+
+    d = await cache.set("");
+    t.equal(d, false, "SET no query provided");
+
+    d = await cache.set("Query with no response");
+    t.equal(d, false, "SET no response provided");
+
+    d = await cache.get("non existing key");
+    t.throws(d, false, "GET non existing key");
+
+    let query = 'What is the speed of a turtle?';
+    let response = 250;
+    d = await cache.set(query, response, true);
+    t.equal(d.response, response, "SET semantic query");
+
+    d = await cache.get('How fast does the turtle move?', true);
+    t.equal(d.response, response, "GET semantic query");
+
+    t.same(
+        await cache.keys(), 
+        [ '543d191182d728ee25dcba4f583cea26' ],
+        "KEY list of keys"
+    );
+
+    t.equal(await cache.has(""), false, "HAS query required to located it");
+
+    query = 'What is the speed of a swallow?';
+    response = 500;
+    d = await cache.set(query, response, true);
+    t.equal(d.response, response, "SET semantic query");
+
+    d = await cache.get(query, true);
+    t.equal(d.response, response, "GET semantic query");
+
+    t.equal(await cache.has(query), true, "HAS query");
+
+    d = await cache.get('How fast does the swallow fly?', true);
+    t.equal(d.response, response, "GET semantic query");
+
+    setTimeout(async function() {
+        const d = await cache.get('What is the speed of a swallow?', true);
+        t.equal(d, false, "GET wait 1s, then remove expired query");
+    }, 1100);
+
+    query = 'Capital of France';
+    response = 'Paris';
+    d = await cache.set(query, response);
+    t.equal(d.response, response, "SET non-semantic query");
+
+    t.same(
+        await cache.queries(), 
+        [ 
+            "What is the speed of a swallow?",
+            "What is the speed of a turtle?",
+            "Capital of France"
+         ], 
+        "QUERIES list queries in cache"
+    );
+
+    d = await cache.del(query);
+    t.equal(d, true, "DEL non-semantic query");
+
+    query = 'Water boils at';
+    response = 100;
+    d = await cache.set(query, response);
+    t.equal(d.response, response, "SET non-semantic query");
+
+    d = await cache.delete('');
+    t.equal(d, false, "DELETE no query provided");
+
+    d = await cache.delete(query);
+    t.equal(d, true, "DELETE non-semantic query");
+
+    d = await cache.set(query, response);
+    t.equal(d.response, response, "SET non-semantic query");
+
+    setTimeout(async function() {
+        const d = await cache.get(query);
+        t.equal(d, false, "GET wait 1s, then remove expired query");
+    }, 1100);
+
+    t.equal(await cache.prune(), 0, "PRUNE remove expired queries");
+
+    setTimeout(async function() {
         const d = await cache.queries();
-        t.same(d, []);
-    },
+        t.same(d, 0, "QUERIES wait 5 seconds, then list queries in cache");
+    }, 5000);
 
-    async (t, cache) => {
-        const query1 = 'What is the speed of a swallow?';
-        const answer1 = 500;
-        const isSemantic = true;
-        const d = await cache.set(query1, answer1, isSemantic);
-        t.equal(d.response, 500);
-    },
+    await cache.set(query, response);
+    t.equal(d.response, 100, "SET non-semantic query");
 
-    async (t, cache) => {
-        const query2 = 'What is the speed of a turtle?';
-        const answer2 = 250;
-        const isSemantic = true;
-        const d = await cache.set(query2, answer2, isSemantic);
-        t.equal(d.response, 250);
-    },
-
-    async (t, cache) => {
-        const query1 = 'What is the speed of a swallow?';
-        const isSemantic = true;
-        const d = await cache.get(query1, isSemantic);
-        t.equal(d.response, 500);
-    },
-
-    async (t, cache) => {
-        const query3 = 'How fast does the swallow fly?';
-        const isSemantic = true;
-        const d = await cache.get(query3, isSemantic);
-        t.equal(d.response, 500);
-    },
-
-    async (t, cache) => {
-        const query4 = 'How fast does the turtle move?';
-        const isSemantic = true;
-        const d = await cache.get(query4, isSemantic);
-        t.equal(d.response, 250);
-    },
-
-    async (t, cache) => {
-        const d = await cache.keys();
-        t.same(d, [
-            '067dd5f4e9df080730bc1013f02238dd',
-            '543d191182d728ee25dcba4f583cea26'
-        ]);
-    },
-
-    async (t, cache) => {
-        const d = await cache.queries();
-        t.same(d, [ 
-            'What is the speed of a swallow?', 
-            'What is the speed of a turtle?' 
-        ]);
-    },
-
-    async (t, cache) => {
-        const query1 = 'What is the speed of a swallow?';
-        const d = await cache.has(query1);
-        t.equal(d, true);
-    },
-
-    async (t, cache) => {
-        const d = await cache.set('Capital of France', 'Paris');
-        t.equal(d.response, 'Paris');
-    },
-
-    async (t, cache) => {
-        const d = await cache.del('Capital of France');
-        t.equal(d, true);
-    },
-
-    async (t, cache) => {
-        const d = await cache.set('Water boils at', 100);
-        t.equal(d.response, 100);
-    },
-
-    async (t, cache) => {
-        const d = await cache.delete('Water boils at');
-        t.equal(d, true);
-    },
-
-    async (t, cache) => {
+    setTimeout(async function() {
         const d = await cache.prune();
-        t.equal(d, 0);
-    },
-
-    async (t, cache) => {
-        setTimeout(async function() {
-            const d = await cache.queries();
-            t.same(d, []);
-        }, 5000)
-    }
-]
-
-t.test('testing cache', async t => {
-    t.plan(tests.length);
-
-    for (let i = 0, j = tests.length; i < j; i++) {
-        const test = tests[i];
-        await test(t, cache);
-    }
+        t.equal(d, 0, "PRUNE wait 1s, then remove expired queries");
+    }, 1100);
     
 })
