@@ -126,7 +126,6 @@ class Cache {
         const rm = this.rm;
         const that = this;
 
-
         function cb({ file }) {
             
             return async function() {

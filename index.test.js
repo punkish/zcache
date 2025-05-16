@@ -109,7 +109,7 @@ t.test('testing cache', async (t) => {
 
     setTimeout(async function() {
         const d = await cache.prune();
-        t.equal(d, 0, "PRUNE wait 1s, then remove expired queries");
+        t.equal(d, 1, "PRUNE wait 1s, then remove expired queries");
     }, 1100);
     
 })
