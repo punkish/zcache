@@ -119,6 +119,7 @@ class Cache {
         const rm_byKey = this.#rm_byKey;
         const that = this;
 
+
         function cb({ file, key }) {
             
             return async function() {
@@ -161,6 +162,7 @@ class Cache {
 
                 }
             }
+
         }
 
         await this.#walkDir(cb);
@@ -355,7 +357,6 @@ class Cache {
     }
 
     async keys() {
-        //const dirNameSpace = this.#genDirNameSpace();
         const results = [];
 
         function cb({ key }) {
@@ -508,7 +509,6 @@ class Cache {
                     const fn = cb(params);
                     await fn();
                 }
-                
                 
             }
 

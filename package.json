@@ -18,7 +18,7 @@
   "type": "module",
   "homepage": "https://github.com/punkish/zcache#readme",
   "devDependencies": {
-    "tap": "^18.8.0"
+    "tap": "^21.1.0"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.1"
