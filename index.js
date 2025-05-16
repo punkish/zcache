@@ -54,14 +54,14 @@ class Cache {
 
         this.config = {}
         Object.assign(this.config, config,  opts);
-        this.config.dirNameSpace = this.#genDirNameSpace()
+        this.config.dirNameSpace = path.join(
+            this.config.dir, this.config.name, this.config.space
+        )
     }
 
+    // Ensure cache directory exists
     async init() {
-
-        // Ensure cache directory exists
-        const dirNameSpace = this.#genDirNameSpace();
-        this.#mkdir(dirNameSpace);
+        this.#mkdir(this.config.dirNameSpace)
     }
 
     async get(query, isSemantic = false) {
@@ -405,18 +405,6 @@ class Cache {
         return ((entry.stored + entry.ttl) - Date.now()) <= 0
     }
 
-    /**
-     * calculate dirNameSpace
-     * @returns {string} - full path to cache namespace
-     * given   dir          = './'
-     *         name         = 'cache'
-     *         space        = 'default'
-     * returns dirNameSpace = './cache/default'
-     */
-    #genDirNameSpace() {
-        return path.join(this.config.dir, this.config.name, this.config.space)
-    }
-
     #genDirNameSpace123File(key, dirNameSpace) {
 
         // full filename of the result
@@ -435,7 +423,7 @@ class Cache {
     }
 
     #genPaths(query) {
-        const dirNameSpace = this.#genDirNameSpace();
+        const dirNameSpace = this.config.dirNameSpace;
     
         // convert query to key
         // given   'What is the speed of an unladen swallow?'
