@@ -61,7 +61,7 @@ class Cache {
 
     // Ensure cache directory exists
     async init() {
-        this.#mkdir(this.config.dirNameSpace)
+        await this.#mkdir(this.config.dirNameSpace)
     }
 
     async get(query, isSemantic = false) {
@@ -119,58 +119,48 @@ class Cache {
         const srcEmbedding = await this.#generateEmbedding(query);
         let bestMatch;
         let highestSimilarity = 0;
-        const isExpired = this.#isExpired;
-        const generateEmbedding = this.#generateEmbedding;
-        const similarityThreshold = this.config.similarityThreshold
-        const calculateSimilarity = this.#calculateSimilarity;
-        const rm = this.rm;
-        const that = this;
-
-        function cb({ file }) {
             
-            return async function() {
-                try {
-                    const data = await fs.readFile(file, 'utf8');
-                    const entry = JSON.parse(data);
-                    const query = entry.query;
-                    
-                    // Check TTL
-                    if (isExpired(entry)) {
-                        await rm.call(that, query);
-                        return false;
-                    }
-
-                    if (entry.isSemantic) {
-                        const tgtEmbedding = await generateEmbedding(query);
-
-                        // Only similarity > similarityThreshold will be 
-                        // returned
-                        const similarity = calculateSimilarity(
-                            srcEmbedding, 
-                            tgtEmbedding,
-                            similarityThreshold
-                        );
-
-                        if (similarity && (similarity > highestSimilarity)) {
-                            highestSimilarity = similarity;
-                            bestMatch = entry;
-                        }
-                    }
-
-                } 
-
-                /* c8 ignore start */
-                catch (error) {
-
-                    // File doesn't exist, which is fine
-                    if (error.code !== 'ENOENT') {
-                        throw error; // Other errors should be thrown
-                    }
-
+        const cb = async (file) => {
+            try {
+                const data = await fs.readFile(file, 'utf8');
+                const entry = JSON.parse(data);
+                const query = entry.query;
+                
+                // Check TTL
+                if (this.#isExpired(entry)) {
+                    await this.rm(query);
+                    return false;
                 }
-                /* c8 ignore stop */
-            }
 
+                if (entry.isSemantic) {
+                    const tgtEmbedding = await this.#generateEmbedding(query);
+
+                    // Only similarity > similarityThreshold will be 
+                    // returned
+                    const similarity = this.#calculateSimilarity(
+                        srcEmbedding, 
+                        tgtEmbedding,
+                        this.config.similarityThreshold
+                    );
+
+                    if (similarity && (similarity > highestSimilarity)) {
+                        highestSimilarity = similarity;
+                        bestMatch = entry;
+                    }
+                }
+
+            } 
+
+            /* c8 ignore start */
+            catch (error) {
+
+                // File doesn't exist, which is fine
+                if (error.code !== 'ENOENT') {
+                    throw error; // Other errors should be thrown
+                }
+
+            }
+            /* c8 ignore stop */
         }
 
         await this.#walkDir(cb);
@@ -221,45 +211,6 @@ class Cache {
 
     }
 
-    async prune() {
-        let pruned = 0;
-        const isExpired = this.#isExpired;
-        const rm = this.rm;
-        const that = this;
-
-        function cb({ file }) {
-            
-            return async function() {
-                try {
-                    const data = await fs.readFile(file, 'utf8');
-                    const entry = JSON.parse(data);
-                    const query = entry.query;
-                    
-                    // Check TTL
-                    if (isExpired(entry)) {
-                        await rm.call(that, query);
-                        pruned++;
-                    }
-
-                } 
-
-                /* c8 ignore start */
-                catch (error) {
-
-                    // File doesn't exist, which is fine
-                    if (error.code !== 'ENOENT') {
-                        throw error; // Other errors should be thrown
-                    }
-
-                }
-                /* c8 ignore stop */
-            }
-        }
-
-        await this.#walkDir(cb);
-        return pruned
-    }
-
     async rm(query) {
         if (!query) {
             console.error("error: 'query' is required to delete it");
@@ -283,80 +234,55 @@ class Cache {
         /* c8 ignore stop */
     }
 
-    // TODO
-    //getStats() {
-
-        // Count expired entries
-        //let expiredCount = 0;
-
-        // for (const entry of this.cache.values()) {
-        //     if (this.#isExpired(entry)) {
-        //         expiredCount++;
-        //     }
-        // }
-     
-        // return {
-        //     size: this.cache.size,
-        //     maxSize: this.maxSize,
-        //     expired: expiredCount
-        // };
-    //}
-
     // aliases
     async del(query) { return await this.rm(query) }
     async delete(query) { return await this.rm(query) }
 
-    async queries() {
-        const queries = [];
-        const isExpired = this.#isExpired;
-        const rm = this.rm;
-        const that = this;
+    async #_queries(type) {
+        const result = {
+            queries: [],
+            pruned: 0
+        };
 
-        function cb({ file }) {
-            return async function() {
-                try {
-
-                    const data = await fs.readFile(file, 'utf8');
-                    const entry = JSON.parse(data);
-                    const query = entry.query;
-                    
-                    // Check TTL
-                    if (isExpired(entry)) {
-                        await rm.call(that, query);
-                        return false;
-                    }
-        
-                    queries.push(query);
+        const cb =  async (file) => {
+            try {
+                const data = await fs.readFile(file, 'utf8');
+                const entry = JSON.parse(data);
+                const query = entry.query;
+                
+                // Check TTL
+                if (this.#isExpired(entry)) {
+                    await this.rm(query);
+                    result.pruned++;
                 }
-
-                /* c8 ignore start */
-                catch (error) {
-        
-                    // File doesn't exist, which is fine
-                    if (error.code !== 'ENOENT') {
-                        throw error; // Other errors should be thrown
-                    }
-                    
+                else {
+                    result.queries.push(query);
                 }
-                /* c8 ignore stop */
+    
             }
+
+            /* c8 ignore start */
+            catch (error) {
+    
+                // File doesn't exist, which is fine
+                if (error.code !== 'ENOENT') {
+                    throw error; // Other errors should be thrown
+                }
+                
+            }
+            /* c8 ignore stop */
         }
 
         await this.#walkDir(cb)
-        return queries.length ? queries : 0
+        return result[type]
     }
 
-    async keys() {
-        const results = [];
+    async queries() {
+        return await this.#_queries('queries')
+    }
 
-        function cb({ key }) {
-            return function() {
-                results.push(key);
-            }
-        }
-
-        await this.#walkDir(cb)
-        return results
+    async prune() {
+        return await this.#_queries('pruned')
     }
 
     async has(query) {
@@ -416,8 +342,8 @@ class Cache {
         const [ _, thr, two, one ] = key.match(/(((\w)\w)\w)/);
         const dirNameSpace123 = path.join(dirNameSpace, one, two, thr);
 
-        // full path to the filename
-        // returns './cache/default/a/ac/acb/acbd18db4cc2f85cedef654fccc4a4d8.json'
+        // full path to the filename. For eg.
+        // './cache/default/a/ac/acb/acbd18db4cc2f85cedef654fccc4a4d8.json'
         const dirNameSpace123File = path.join(dirNameSpace123, file);
         return { file, dirNameSpace123, dirNameSpace123File }
     }
@@ -463,20 +389,7 @@ class Cache {
 
                 if (path.extname(entry.name) === '.json') {
                     const file = path.join(dir, entry.name);
-                    const params = { 
-
-                        // clear() needs this
-                        // get() needs this
-                        // prune() needs this
-                        file
-                    }
-
-                    // keys() 
-                    const key = path.basename(entry.name, '.json');
-                    params.key = key; 
-
-                    const fn = cb(params);
-                    await fn();
+                    await cb(file)
                 }
                 
             }
