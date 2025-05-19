@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'node:fs/promises';
 import path from 'path';
 import { generateEmbedding, calculateSimilarity } from './lib/similarity.js';
-
+import { isExpired, walkDir, mkdir, genPaths } from './lib/utils.js';
 /**
 * Create a cache 
 * @param {Object} opts - Configuration options for the cache
@@ -61,7 +61,7 @@ class Cache {
 
     // Ensure cache directory exists
     async init() {
-        await this.#mkdir(this.config.dirNameSpace)
+        await mkdir(this.config.dirNameSpace)
     }
 
     async get(query, isSemantic = false) {
@@ -86,14 +86,16 @@ class Cache {
     }
 
     async #get(query) {
-        const { dirNameSpace123File } = this.#genPaths(query);
+        const { 
+            dirNameSpace123File 
+        } = genPaths(query, this.config.dirNameSpace);
 
         try {
             const data = await fs.readFile(dirNameSpace123File, 'utf8');
             const entry = JSON.parse(data);
             
             // Check TTL
-            if (this.#isExpired(entry)) {
+            if (isExpired(entry)) {
                 await this.rm(query);
                 return false;
             }
@@ -116,7 +118,7 @@ class Cache {
     async #getSem(query) {
 
         // There is no exact match, so let's check for similar queries
-        const srcEmbedding = await this.#generateEmbedding(query);
+        const srcEmbedding = await generateEmbedding(query);
         let bestMatch;
         let highestSimilarity = 0;
             
@@ -127,22 +129,23 @@ class Cache {
                 const query = entry.query;
                 
                 // Check TTL
-                if (this.#isExpired(entry)) {
+                if (isExpired(entry)) {
                     await this.rm(query);
                     return false;
                 }
 
                 if (entry.isSemantic) {
-                    const tgtEmbedding = await this.#generateEmbedding(query);
+                    const tgtEmbedding = await generateEmbedding(query);
 
                     // Only similarity > similarityThreshold will be 
                     // returned
-                    const similarity = this.#calculateSimilarity(
+                    const similarity = calculateSimilarity(
                         srcEmbedding, 
                         tgtEmbedding,
                         this.config.similarityThreshold
                     );
 
+                    // Remember the highestSimilarity
                     if (similarity && (similarity > highestSimilarity)) {
                         highestSimilarity = similarity;
                         bestMatch = entry;
@@ -163,7 +166,7 @@ class Cache {
             /* c8 ignore stop */
         }
 
-        await this.#walkDir(cb);
+        await walkDir(this.config.dirNameSpace, cb);
 
         if (bestMatch) {
             return bestMatch;  
@@ -193,8 +196,11 @@ class Cache {
             data.isSemantic = true;
         }
         
-        const { dirNameSpace123, dirNameSpace123File } = this.#genPaths(query);
-        await this.#mkdir(dirNameSpace123);
+        const { 
+            dirNameSpace123, 
+            dirNameSpace123File 
+        } = genPaths(query, this.config.dirNameSpace);
+        await mkdir(dirNameSpace123);
 
         try {
             await fs.writeFile(dirNameSpace123File, JSON.stringify(data));
@@ -217,7 +223,9 @@ class Cache {
             return false;
         }
 
-        const { dirNameSpace123File } = this.#genPaths(query);
+        const { 
+            dirNameSpace123File 
+        } = genPaths(query, this.config.dirNameSpace);
         try {
             await fs.unlink(dirNameSpace123File);
             return true;
@@ -251,7 +259,7 @@ class Cache {
                 const query = entry.query;
                 
                 // Check TTL
-                if (this.#isExpired(entry)) {
+                if (isExpired(entry)) {
                     await this.rm(query);
                     result.pruned++;
                 }
@@ -273,7 +281,7 @@ class Cache {
             /* c8 ignore stop */
         }
 
-        await this.#walkDir(cb)
+        await walkDir(this.config.dirNameSpace, cb)
         return result[type]
     }
 
@@ -291,7 +299,9 @@ class Cache {
             return false;
         }
 
-        const { dirNameSpace123File } = this.#genPaths(query);
+        const { 
+            dirNameSpace123File 
+        } = genPaths(query, this.config.dirNameSpace);
         
         try {
 
@@ -313,106 +323,6 @@ class Cache {
         }
         /* c8 ignore stop */
 
-    }
-
-    async #mkdir(dir) {
-        try {
-            await fs.mkdir(dir, { recursive: true });
-        }
-
-        /* c8 ignore start */
-        catch (error) {
-            throw new Error(`Failed to create "${dir}": ${error.message}`);
-        }
-        /* c8 ignore stop */
-    }
-
-    #isExpired(entry) {
-        return ((entry.stored + entry.ttl) - Date.now()) <= 0
-    }
-
-    #genDirNameSpace123File(key, dirNameSpace) {
-
-        // full filename of the result
-        // returns 'acbd18db4cc2f85cedef654fccc4a4d8.json'
-        const file = `${key}.json`;
-
-        // calculate filePath
-        // returns './cache/default/a/ac/acb'
-        const [ _, thr, two, one ] = key.match(/(((\w)\w)\w)/);
-        const dirNameSpace123 = path.join(dirNameSpace, one, two, thr);
-
-        // full path to the filename. For eg.
-        // './cache/default/a/ac/acb/acbd18db4cc2f85cedef654fccc4a4d8.json'
-        const dirNameSpace123File = path.join(dirNameSpace123, file);
-        return { file, dirNameSpace123, dirNameSpace123File }
-    }
-
-    #genPaths(query) {
-        const dirNameSpace = this.config.dirNameSpace;
-    
-        // convert query to key
-        // given   'What is the speed of an unladen swallow?'
-        // returns 'acbd18db4cc2f85cedef654fccc4a4d8'
-        const key = crypto.createHash('md5').update(query).digest('hex');
-        const { file, dirNameSpace123, dirNameSpace123File } = this.#genDirNameSpace123File(key, dirNameSpace);
-    
-        return { 
-            dirNameSpace, 
-            key, 
-            file, 
-            dirNameSpace123, 
-            dirNameSpace123File 
-        }
-    }
-
-    async #walkDir(cb, dir = this.config.dirNameSpace) {
-
-        /*
-         * walk a directory and return the basenames of all the json files as 
-         * an array. See https://stackoverflow.com/a/16684530/183692
-         */
-
-        // the `withFileTypes` option saves having to call stat() on every file
-        const entries = await fs.readdir(dir, { withFileTypes: true });
-        
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
-            
-            if (entry.isDirectory()) {
-                const newdir = path.join(dir, entry.name);
-                await this.#walkDir(cb, newdir);
-            }
-
-            // Is a file
-            else {
-
-                if (path.extname(entry.name) === '.json') {
-                    const file = path.join(dir, entry.name);
-                    await cb(file)
-                }
-                
-            }
-
-        }
-
-    }
-
-    /**
-     * Generate embedding for a query
-     */
-    async #generateEmbedding(query) {
-        return generateEmbedding(query)
-    }
-
-    #calculateSimilarity(embedding1, embedding2, similarityThreshold) {
-        const similarity = calculateSimilarity(embedding1, embedding2);
-
-        if (similarity >= similarityThreshold) {
-            return similarity;
-        }
-
-        return false;
     }
     
 }
