@@ -1,22 +1,21 @@
-import crypto from 'crypto';
 import fs from 'node:fs/promises';
 import path from 'path';
 import { generateEmbedding, calculateSimilarity } from './lib/similarity.js';
-import { isExpired, walkDir, mkdir, genPaths } from './lib/utils.js';
+import { isExpired, walkDir, mkdir, genPaths, exists } from './lib/utils.js';
 /**
 * Create a cache 
 * @param {Object} opts - Configuration options for the cache
 * @param {integer} opts.maxSize - Max entries in the cache (100)
 * @param {number} opts.similarityThreshold - Semantic similarity threshold (0.9)
 * @param {integer} opts.ttl - Time to live in ms (default 1 day)
-* @param {string} opts.zDir - Basedir for the cache ('./cache')
-* @param {string} opts.zSpace - Cache namespace ('default')
+* @param {string} opts.dir - Basedir for the cache ('./cache')
+* @param {string} opts.segment - Cache segment ('default')
 * @returns {Object} - Cache API object
 * const cache = new Cache(
 *      { 
 *          dir: './'
 *          name: 'cache',
-*          space: 'default',
+*          segment: 'default',
 *          ttl: 1 * 24 * 60 * 60 * 1000, 
 *          similarityThreshold: 0.9
 *      });
@@ -31,8 +30,8 @@ import { isExpired, walkDir, mkdir, genPaths } from './lib/utils.js';
 * rm       | rm(query) removes key from cache
 * del      | del(query) -> synonym for rm
 * delete   | delete(key) -> synonym for rm
-* prune    | prune() removes expired keys
-* keys     | keys() lists all the keys in the cache
+* prune    | prune() removes expired queries
+* queries  | queries() lists all the queries in the cache
 * has      | has(query) return true or false
 * ================================================================= 
 */
@@ -41,9 +40,8 @@ class Cache {
 
         // Configuration option defaults
         const config = {
-            dir: './',
-            name: 'cache',
-            space: 'default',
+            dir: './cache',
+            segment: 'default',
 
             //   d      h     m       s     ms
             //   ▲      ▲     ▲       ▲      ▲
@@ -54,30 +52,42 @@ class Cache {
 
         this.config = {}
         Object.assign(this.config, config,  opts);
-        this.config.dirNameSpace = path.join(
-            this.config.dir, this.config.name, this.config.space
-        )
     }
 
     // Ensure cache directory exists
     async init() {
-        await mkdir(this.config.dirNameSpace)
+        await mkdir(this.config.dir)
     }
 
-    async get(query, isSemantic = false) {
-        if (!query) {
-            console.error("error: 'query' is required to get its value");
-            return false;
+    async get(obj) {
+        let segment;
+        let query;
+        let isSemantic;
+
+        if (!obj || !obj.query) {
+
+            if (!query) {
+                console.error("error: 'query' is required to GET its value");
+                return false;
+            }
+
+        }
+        else {
+            segment = obj.segment ?? this.config.segment;
+            isSemantic = obj.isSemantic ?? false;
+            query = obj.query;
         }
 
-        // First, check if there is an exact query
-        let cachedData = await this.#get(query);
+        // First, check if there is an exact query. 
+        // Note: This will match plain as well as semantic 
+        // queries because it looks for the exact key
+        let cachedData = await this.#get(segment, query);
         if (cachedData) return cachedData;
-        
-        if (isSemantic) {
 
-            // No exact query found, so check for semantically similary queries
-            cachedData = await this.#getSem(query);
+        // If we reach here, no exact query found, 
+        // so check for semantically similary queries
+        if (isSemantic) {
+            cachedData = await this.#getSem(segment, query);
             if (cachedData) return cachedData;
         }
         
@@ -85,37 +95,32 @@ class Cache {
         return false;
     }
 
-    async #get(query) {
-        const { 
-            dirNameSpace123File 
-        } = genPaths(query, this.config.dirNameSpace);
+    async #get(segment, query) {
+        
+        const { filepath, filename } = genPaths({
+            dir: this.config.dir, 
+            segment, 
+            query
+        });
 
-        try {
-            const data = await fs.readFile(dirNameSpace123File, 'utf8');
+        const cacheFile = path.join(filepath, filename);
+
+        if (await exists(cacheFile)) {
+            const data = await fs.readFile(cacheFile, 'utf8');
             const entry = JSON.parse(data);
             
             // Check TTL
             if (isExpired(entry)) {
-                await this.rm(query);
+                await this.rm({ segment, query });
                 return false;
             }
 
             return entry;
-        } 
-
-        /* c8 ignore start */
-        catch (error) {
-
-            // File doesn't exist, which is fine
-            if (error.code !== 'ENOENT') {
-                throw error; // Other errors should be thrown
-            }
-
         }
-        /* c8 ignore stop */
+
     }
 
-    async #getSem(query) {
+    async #getSem(segment, query) {
 
         // There is no exact match, so let's check for similar queries
         const srcEmbedding = await generateEmbedding(query);
@@ -130,26 +135,24 @@ class Cache {
                 
                 // Check TTL
                 if (isExpired(entry)) {
-                    await this.rm(query);
+                    await this.rm({ segment, query, isSemantic: true });
                     return false;
                 }
 
-                if (entry.isSemantic) {
-                    const tgtEmbedding = await generateEmbedding(query);
+                const tgtEmbedding = await generateEmbedding(query);
 
-                    // Only similarity > similarityThreshold will be 
-                    // returned
-                    const similarity = calculateSimilarity(
-                        srcEmbedding, 
-                        tgtEmbedding,
-                        this.config.similarityThreshold
-                    );
+                // Only similarity > similarityThreshold will be 
+                // returned
+                const similarity = calculateSimilarity(
+                    srcEmbedding, 
+                    tgtEmbedding,
+                    this.config.similarityThreshold
+                );
 
-                    // Remember the highestSimilarity
-                    if (similarity && (similarity > highestSimilarity)) {
-                        highestSimilarity = similarity;
-                        bestMatch = entry;
-                    }
+                // Remember the highestSimilarity
+                if (similarity && (similarity > highestSimilarity)) {
+                    highestSimilarity = similarity;
+                    bestMatch = entry;
                 }
 
             } 
@@ -166,23 +169,47 @@ class Cache {
             /* c8 ignore stop */
         }
 
-        await walkDir(this.config.dirNameSpace, cb);
+        const cacheDir = path.join(this.config.dir, segment, '+');
+        
+        if (await exists(cacheDir)) {
+            await walkDir(cacheDir, cb);
 
-        if (bestMatch) {
-            return bestMatch;  
+            if (bestMatch) {
+                return bestMatch;  
+            }
         }
               
     }
 
-    async set(query, response, isSemantic = false, ttl = this.config.ttl) {
-        if (!query) {
-            console.error("error: 'query' is required to set its value");
-            return false;
-        }
+    async set(obj) {
+        let segment;
+        let query;
+        let response;
+        let isSemantic;
+        let ttl;
 
-        if (!response) {
-            console.error("error: 'response' is required to store the query");
-            return false;
+        if (!obj || !obj.query) {
+
+            if (!query) {
+                console.error("error: 'query' is required to GET its value");
+                return false;
+            }
+
+        }
+        else if (!obj || !obj.response) {
+
+            if (!response) {
+                console.error("error: 'response' is required to SET its value");
+                return false;
+            }
+
+        }
+        else {
+            segment = obj.segment ?? this.config.segment;
+            query = obj.query;
+            response = obj.response;
+            isSemantic = obj.isSemantic ?? false;
+            ttl = obj.ttl ?? this.config.ttl;
         }
 
         const data = { 
@@ -191,137 +218,173 @@ class Cache {
             stored: Date.now(),
             ttl
         }
-
-        if (isSemantic) {
-            data.isSemantic = true;
-        }
         
-        const { 
-            dirNameSpace123, 
-            dirNameSpace123File 
-        } = genPaths(query, this.config.dirNameSpace);
-        await mkdir(dirNameSpace123);
+        const { filepath, filename } = genPaths({
+            dir: this.config.dir, 
+            segment, 
+            isSemantic,
+            query
+        });
+        const cacheFile = path.join(filepath, filename);
 
         try {
-            await fs.writeFile(dirNameSpace123File, JSON.stringify(data));
+            await mkdir(filepath, { recursive: true });
+            await fs.writeFile(cacheFile, JSON.stringify(data));
             return data;
         }
 
         /* c8 ignore start */
         catch (error) {
             throw new Error(
-                `Failed to write to "${dirNameSpace123File}": ${error.message}`
+                `Failed to write to "${cacheFile}": ${error.message}`
             );
         }
         /* c8 ignore stop */
 
     }
 
-    async rm(query) {
-        if (!query) {
-            console.error("error: 'query' is required to delete it");
-            return false;
+    async rm(obj) {
+        let segment;
+        let query;
+        let isSemantic;
+
+        if (!obj || !obj.query) {
+
+            if (!query) {
+                console.error("error: 'query' is required to REMOVE its value");
+                return false;
+            }
+
+        }
+        else {
+            segment = obj.segment ?? this.config.segment;
+            isSemantic = obj.isSemantic ?? false;
+            query = obj.query;
         }
 
-        const { 
-            dirNameSpace123File 
-        } = genPaths(query, this.config.dirNameSpace);
-        try {
-            await fs.unlink(dirNameSpace123File);
+        const { filepath, filename } = genPaths({
+            dir: this.config.dir, 
+            segment, 
+            isSemantic,
+            query
+        });
+        const cacheFile = path.join(filepath, filename);
+
+        if (await exists(cacheFile)) {
+            await fs.unlink(cacheFile);
             return true;
         }
 
-        /* c8 ignore start */
-        catch (error) {
-
-            // File doesn't exist, which is fine
-            if (error.code !== 'ENOENT') {
-                throw error; // Other errors should be thrown
-            }
-        }
-        /* c8 ignore stop */
     }
 
     // aliases
-    async del(query) { return await this.rm(query) }
-    async delete(query) { return await this.rm(query) }
+    async del(obj) { 
+        return await this.rm(obj) 
+    }
 
-    async #_queries(type) {
+    async delete(obj) { 
+        return await this.rm(obj) 
+    }
+
+    async queries(obj) {
+        const segment = (obj && obj.segment) ?? this.config.segment;
+        let typeOfQueries = (obj && obj.typeOfQueries) ?? 'existing';
+        let isSemantic = (obj && obj.isSemantic) ?? false;
+
+        // Check if target directory exists
+        const sem = isSemantic ? '+' : '-';
+        const cacheDir = path.join(this.config.dir, segment, sem);
+
+        if (await exists(cacheDir)) {
+            return await this.#_queries(segment, isSemantic, typeOfQueries);
+        }
+
+    }
+
+    async #_queries(segment, isSemantic, typeOfQueries) {
         const result = {
-            queries: [],
+            existing: [],
             pruned: 0
         };
 
         const cb =  async (file) => {
-            try {
+
+            if (await exists(file)) {
                 const data = await fs.readFile(file, 'utf8');
                 const entry = JSON.parse(data);
                 const query = entry.query;
                 
                 // Check TTL
                 if (isExpired(entry)) {
-                    await this.rm(query);
+                    await this.rm({ segment, query, isSemantic });
                     result.pruned++;
                 }
                 else {
-                    result.queries.push(query);
+                    result.existing.push(query);
                 }
-    
             }
 
-            /* c8 ignore start */
-            catch (error) {
-    
-                // File doesn't exist, which is fine
-                if (error.code !== 'ENOENT') {
-                    throw error; // Other errors should be thrown
-                }
-                
-            }
-            /* c8 ignore stop */
+            // /* c8 ignore start */
+            // /* c8 ignore stop */
         }
 
-        await walkDir(this.config.dirNameSpace, cb)
-        return result[type]
-    }
+        const sem = isSemantic ? '+' : '-';
+        const cacheDir = path.join(this.config.dir, segment, sem);
 
-    async queries() {
-        return await this.#_queries('queries')
-    }
-
-    async prune() {
-        return await this.#_queries('pruned')
-    }
-
-    async has(query) {
-        if (!query) {
-            console.error("error: 'query' is required to locate it");
-            return false;
+        if (await exists(cacheDir)) {
+            await walkDir(cacheDir, cb);
+            return result[typeOfQueries];
         }
-
-        const { 
-            dirNameSpace123File 
-        } = genPaths(query, this.config.dirNameSpace);
         
-        try {
+    }
 
-            // Check if the target file exists
-            await fs.access(dirNameSpace123File);
+    async prune(obj) {
+        const segment = (obj && obj.segment) ?? this.config.segment;
+        let typeOfQueries = (obj && obj.typeOfQueries) ?? 'pruned';
+        let isSemantic = (obj && obj.isSemantic) ?? false;
+
+        // Check if target directory exists
+        const sem = isSemantic ? '+' : '-';
+        const cacheDir = path.join(this.config.dir, segment, sem);
+
+        if (await exists(cacheDir)) {
+            return await this.#_queries(segment, isSemantic, typeOfQueries);
+        }
+        
+    }
+
+    async has(obj) {
+        let segment;
+        let query;
+        let isSemantic;
+
+        if (!obj || !obj.query) {
+
+            if (!query) {
+                console.error("error: 'query' is required to LOCATE its value");
+                return false;
+            }
+
+        }
+        else {
+            segment = obj.segment ?? this.config.segment;
+            isSemantic = obj.isSemantic ?? false;
+            query = obj.query;
+        }
+
+        const { filepath, filename } = genPaths({
+            dir: this.config.dir, 
+            segment, 
+            isSemantic,
+            query
+        });
+        const cacheFile = path.join(filepath, filename);
+
+        if (await exists(cacheFile)) {
             return true;
         }
 
-        /* c8 ignore start */
-        catch (error) {
-            
-            if (error.code === 'ENOENT') {
-                return false;
-            }
-            else {
-                throw error.message; // Other errors should be thrown
-            }
-
-        }
-        /* c8 ignore stop */
+        return false;
 
     }
     

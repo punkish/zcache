@@ -14,9 +14,8 @@ Create a cache
 import { Cache } from '@punkish/zcache';
 
 const options = {
-    dir: './',
-    name: 'cache',
-    space: 'default',
+    dir: './cache',
+    segment: 'default',
     ttl: 86400000
     similarityThreshold: 0.9
 };
@@ -32,14 +31,17 @@ Cache a semantic query
 
 ```
 const query1 = 'What is the speed of a swallow?';
-const answer1 = 500;
+const response1 = 500;
 const isSemantic = true;
-const res = await cache.set(query1, answer1, isSemantic);
+const res = await cache.set({ 
+    query: query1, 
+    response: response1, 
+    isSemantic 
+});
 console.log(res);
 // {
 //     query: "What is the speed of a swallow?",
 //     response: 500,
-//     isSemantic: true,
 //     stored: <date>
 //     ttl: 86400000
 // }
@@ -49,8 +51,11 @@ Cache a non-semantic query
 
 ```
 const query2 = 'Half of 1000';
-const answer2 = 500;
-const res = await cache.set(query2, answer2);
+const response2 = 500;
+const res = await cache.set({ 
+    query: query2, 
+    response: response2 
+});
 console.log(res);
 // {
 //     query: "Half of 1000",
@@ -63,7 +68,7 @@ console.log(res);
 Retrieve the values
 
 ```
-const res1 = await cache.get(query2);
+const res1 = await cache.get({ query: query2 });
 console.log(res1);
 // {
 //     query: "Half of 1000",
@@ -71,12 +76,11 @@ console.log(res1);
 //     stored: <date>
 //     ttl: 86400000
 // }
-const res2 = await cache.get(query1, isSemantic);
+const res2 = await cache.get({ query: query1, isSemantic });
 console.log(res2);
 // {
 //     query: "What is the speed of a swallow?",
 //     response: 500,
-//     isSemantic: true,
 //     stored: <date>
 //     ttl: 86400000
 // }
@@ -86,12 +90,11 @@ Retrieve another semantic query
 
 ```
 const query3 = 'How fast does the swallow fly?';
-const res = await cache.get(query3, isSemantic);
+const res = await cache.get({ query: query3, isSemantic });
 console.log(res);
 // {
 //     query: "What is the speed of a swallow?",
 //     response: 500,
-//     isSemantic: true,
 //     stored: <date>
 //     ttl: 86400000
 // }
