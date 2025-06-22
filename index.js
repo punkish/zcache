@@ -312,7 +312,7 @@ class Cache {
             if (await exists(file)) {
                 const data = await fs.readFile(file, 'utf8');
                 const entry = JSON.parse(data);
-                const query = entry.query;
+                const query = entry;
                 
                 // Check TTL
                 if (isExpired(entry)) {

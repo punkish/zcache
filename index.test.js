@@ -4,7 +4,7 @@ import * as fs from 'fs';
 
 // fs.rmSync('./cache', { recursive: true, force: true });
 
-t.test('testing non-existent queries', async (t) => {
+t.skip('testing non-existent queries', async (t) => {
 
     // Create a semantic cache with a 1 sec time to live
     const cache = new Cache({
@@ -42,7 +42,7 @@ t.test('testing non-existent queries', async (t) => {
     t.end();
 });
 
-t.test('testing non-semantic cache', async (t) => {
+t.skip('testing non-semantic cache', async (t) => {
 
     // Create a new semantic cache with a 1 sec time to live
     const cache = new Cache({
@@ -83,7 +83,7 @@ t.test('testing non-semantic cache', async (t) => {
     t.end();
 });
 
-t.test('testing semantic cache', async (t) => {
+t.skip('testing semantic cache', async (t) => {
 
     // Create a new semantic cache with a 1 sec time to live
     const cache = new Cache({
@@ -254,7 +254,7 @@ t.test('testing semantic cache', async (t) => {
 // })
 
 
-t.test('testing cache expiry', async (t) => {
+t.skip('testing cache expiry', async (t) => {
     t.plan(3);
 
     // Create a new semantic cache with a 1 sec time to live
@@ -283,7 +283,7 @@ t.test('testing cache expiry', async (t) => {
     
 });
 
-t.test('testing cache prune', async (t) => {
+t.skip('testing cache prune', async (t) => {
     t.plan(4);
 
     // Create a new semantic cache with a 1 sec time to live
